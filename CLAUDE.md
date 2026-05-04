@@ -24,6 +24,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `docs/full-book.md` 是完整单文件版本（412K 字符）。原始 PDF 也在仓库根目录。
 
+## 设计文档
+
+- `design/memory.md` — **跨会话记忆窗口**，持久化记录问题与结论，所有会话开始时先读取此文件了解上下文，每次得出新结论后更新此文件
+
 ## 工具链
 
 - Python 环境：`conda activate kg-rag`（运行任何 Python 脚本时必须先激活）

@@ -30,6 +30,7 @@
 | 设计文档目录 | `design/` 目录已创建 |
 | PRD v1 | `design/prd-v1.md` — MVP 范围：CLI启动、用户输入、模型流式回复、会话管理、退出、API Key配置 |
 | 架构 v1 | `design/architecture-v1.md` — 四模块架构（CLI→REPL→查询引擎→API客户端），含模块图/技术图/数据流图/流程图/文件规划 |
+| MVP 代码实现 | 已完成：src/types + src/api/client + src/engine/QueryEngine + src/screens/REPL + src/index + bin/long-cli，构建通过 |
 
 ## 已确定的架构决策
 
@@ -40,6 +41,7 @@
 | 核心模式 | AsyncGenerator 事件流 | query→yield→render，后续加工具调用无需重构 |
 | 会话模型 | 每次启动=新会话，内存中维护 messages[] | MVP 不做持久化 |
 | 串行执行 | 一次只有一个请求 | 先串行，AsyncGenerator 接口已为并行留空间 |
+| LLM API | OpenAI 兼容协议（阿里云 DashScope） | 环境变量：OPENAI_API_KEY / OPENAI_BASE_URL / CHAT_MODEL，默认 qwen-plus |
 
 ## Claude Code 架构要点（从文档提取）
 
@@ -54,7 +56,6 @@
 
 ## 待讨论
 
-- 具体实现：初始化项目、安装依赖、编写代码
 - 各模块详细架构（后续迭代）
 - 工具系统设计（v2）
 - Agent 系统设计（v3）

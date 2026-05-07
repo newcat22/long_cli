@@ -156,4 +156,49 @@ runAgent() → createSubagentContext() → 子 Agent 的 query() 循环
 | A2A | 独立进程 | HTTP/gRPC | Google A2A 协议 |
 | OpenClaw session_spawn | 独立进程/会话 | session 工具套件通信 | `session_spawn` |
 
+---
 
+## 2. 消息处理与执行模型（2026-05-07）
+
+### 三种输入类型的处理差异
+
+`processUserInput()` 根据输入前缀走不同路径，核心区分在于 **`shouldQuery`** 返回值：
+
+| 输入类型 | 处理函数 | `shouldQuery` | 行为 |
+|---------|---------|--------------|------|
+| 普通文本 | `processTextPrompt` | `true` | 构造 UserMessage + AttachmentMessages → 进入 query 循环 |
+| `!xxx` Bash 模式 | `processBashCommand` | `false` | 直接调用 `BashTool.call()` 执行命令，结果包 `<bash-stdout>/<bash-stderr>` 标签，**不进 query 循环** |
+| `/xxx` 斜杠命令 | `processSlashCommand` | 视情况 | 本地 JSX 命令（`/help`）→ `false`；Skill 命令（`/commit`）→ `true`；Agent 命令（`/fork`）→ `true` |
+
+**`shouldQuery: true` 才进 query 循环让 LLM 处理，`false` 在本地处理完直接返回**。Bash 模式本质是快捷方式——用户不想跟 LLM 对话，只想跑命令看结果。
+
+### Query Loop 的执行模型
+
+**核心模型：轮次串行 + 轮内并行 + Agent 递归 + Fork 禁止嵌套**
+
+```
+父 Agent query loop (轮次串行)
+    │
+    ├─ 第1轮: 所有消息 → API → LLM 返回 → 并行执行 [Grep, Glob, Read] → 收集结果
+    ├─ 第2轮: 消息(含上轮结果) → API → LLM 返回 → 执行 [Agent(Explore), Agent(Plan)]
+    │         └─ 两个 Agent 各自启动独立的 query loop，并行运行
+    ├─ 第3轮: 等 task-notification 回来 → LLM 综合判断 → 可能再派 Agent
+    └─ ...
+```
+
+**轮次串行**：每一轮必须等所有工具执行完毕、收集完 tool_result 后，才能构建下一轮消息发给 API。不存在"边执行工具边发下一轮请求"的情况。
+
+**轮内并行**：由 `StreamingToolExecutor` 控制（StreamingToolExecutor.ts:129-134）：
+- `isConcurrencySafe: true` 的工具（Glob、Grep、Read 等）→ **可并行执行**
+- `isConcurrencySafe: false` 的工具（Bash、Write、Edit 等）→ **独占执行**
+- 判断逻辑：当前无执行中工具，或执行中的工具全部是并发安全的，才启动新工具
+
+**Agent 并行性取决于模式**：
+- Fork 开启（`isForkSubagentEnabled()`）：**所有** Agent 调用强制异步（`forceAsync`），多个 Agent 在同一轮中发出后**全部并行**后台运行
+- Fork 关闭：同步 Agent **阻塞**父 Agent 的 query 循环直到完成；只有 `run_in_background=true` 的 Agent 才并行
+
+**Agent 递归**：子 Agent 的 `runAgent()` 内部调用的是同一个 `query()` 函数，拥有独立的消息历史、工具集、上下文，运行完全独立的循环。区别是子 Agent 有 `maxTurns` 限制，且 Fork 不能再 Fork。
+
+### 一句话总结
+
+> **轮次串行、轮内并行、Agent 递归、Fork 禁止嵌套**
